@@ -1,0 +1,10 @@
+{
+  "name": "언제바껴",
+  "short_name": "언제바껴",
+  "description": "내 주변 횡단보도의 다음 초록불까지 남은 시간을 예상해 주는 앱",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#eef0ec",
+  "theme_color": "#0f9d5c",
+  "icons": [{ "src": "icon.svg", "sizes": "any", "type": "image/svg+xml" }]
+}

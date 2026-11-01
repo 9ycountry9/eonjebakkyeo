@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>언제바껴</title>
+<meta name="description" content="내 주변 횡단보도의 다음 초록불까지 남은 시간을 예상해 주는 앱">
+<meta name="theme-color" content="#0f9d5c">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon.svg">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Black+Han+Sans&family=Gothic+A1:wght@400;600;800&family=Share+Tech+Mono&display=swap">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="map" aria-label="지도"></div>
+
+<header class="bar">
+  <h1><span>언제</span>바껴</h1>
+  <span class="chip">예상치</span>
+</header>
+
+<button id="locate" class="fab" type="button" aria-label="내 위치로 이동">
+  <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><circle cx="12" cy="12" r="4" fill="currentColor"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="12" cy="12" r="7.5" fill="none" stroke="currentColor" stroke-width="2"/></svg>
+</button>
+
+<section id="sheet" class="sheet">
+  <div class="grip" aria-hidden="true"></div>
+
+  <!-- 처음 화면: 위치 허용 안내 -->
+  <div id="vIntro">
+    <h2>내 주변 횡단보도를 찾을게요</h2>
+    <p class="muted">위치는 이 폰 안에서만 쓰고 어디에도 보내지 않아요.</p>
+    <button id="allow" class="primary" type="button">내 위치 허용하기</button>
+    <p class="muted small" id="introMsg"></p>
+  </div>
+
+  <!-- 주변 목록 -->
+  <div id="vNear" hidden>
+    <h2>가까운 신호 횡단보도</h2>
+    <div id="nearList" class="list"></div>
+  </div>
+
+  <!-- 선택한 횡단보도 -->
+  <div id="vDetail" hidden>
+    <div class="dhead">
+      <button id="back" class="back" type="button" aria-label="목록으로">‹</button>
+      <div class="dtitle"><b id="dAddr">-</b><span class="muted small" id="dMeta"></span></div>
+    </div>
+    <div class="pred" aria-live="polite">
+      <div class="k">다음 초록불까지 <span class="conf" id="conf" hidden></span></div>
+      <div class="big" id="big">-</div>
+      <div class="muted small" id="sub"></div>
+      <div class="warn" id="warn" hidden></div>
+      <div class="track" id="track" hidden><i id="tg"></i><b id="tn"></b></div>
+    </div>
+    <div class="taps">
+      <button class="tap g" id="tapG" type="button">초록 켜짐<span>켜지는 순간 탭</span></button>
+      <button class="tap r" id="tapR" type="button">빨강 바뀜<span>바뀌는 순간 탭</span></button>
+    </div>
+    <div class="row2">
+      <span class="muted small" id="toast"></span>
+      <button class="link" id="undo" type="button" hidden>마지막 기록 지우기</button>
+    </div>
+  </div>
+
+  <p class="note">예상치예요. 교통량에 따라 신호가 바뀌는 곳에서는 틀릴 수 있으니 건널 때는 반드시 실제 신호등을 보세요. 횡단보도 정보: 전국횡단보도표준데이터(공공데이터포털)</p>
+</section>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
