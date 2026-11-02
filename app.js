@@ -32,6 +32,17 @@ async function ensureRegionsFor(bounds) {
 const median = a => { const s = [...a].sort((x, y) => x - y), m = s.length >> 1; return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2; };
 const weekend = t => { const d = new Date(t).getDay(); return d === 0 || d === 6; };
 const tod = t => { const d = new Date(t); return d.getHours() * 60 + d.getMinutes(); };
+// 같은 버튼을 10초 안에 또 누른 건 실수로 보고 처음 누른 것만 남김
+const DUP_MS = 10000;
+function dedupe(list) {
+  const out = [];
+  for (const e of [...list].sort((a, b) => a.t - b.t)) {
+    const p = out[out.length - 1];
+    if (p && p.k === e.k && e.t - p.t < DUP_MS) continue;
+    out.push(e);
+  }
+  return out;
+}
 function cycleSamples(ev) {
   const g = ev.filter(e => e.k === "g"), out = [];
   for (let i = 1; i < g.length; i++) { const d = (g[i].t - g[i - 1].t) / 1000; if (d >= 40 && d <= 240) out.push(d); }
@@ -41,7 +52,7 @@ function predict(cw, now) {
   const dataCycle = cw.green && cw.red ? cw.green + cw.red : null;
   const base = { dataCycle, dataGreen: cw.green || null };
   if (cw.button) return { ...base, state: "button" };
-  const ev = [...(records[cw.id] || [])].sort((a, b) => a.t - b.t);
+  const ev = dedupe(records[cw.id] || []);
   const near = ev.filter(e => weekend(e.t) === weekend(now) && Math.abs(tod(e.t) - tod(now)) <= 90);
   const src = cycleSamples(near).length ? near : ev;
   const samples = cycleSamples(src);
@@ -193,6 +204,7 @@ function renderDetail() {
   warn.hidden = true; track.hidden = true; conf.hidden = true; sub.textContent = "";
   $("tapG").disabled = $("tapR").disabled = p.state === "button";
   $("undo").hidden = !(records[selected.id] || []).length;
+  renderLog();
   const txt = (m, s) => { big.className = "big txt"; big.textContent = m; sub.textContent = s || ""; };
   switch (p.state) {
     case "button": return txt("버튼을 눌러야 바뀌는 신호예요", "예측할 수 없어요. 신호등의 보행자 버튼을 눌러주세요.");
@@ -213,10 +225,30 @@ function renderDetail() {
     if (p.phase < p.green * 1000) { warn.hidden = false; warn.textContent = "지금은 초록일 수도 있어요. 남은 시간이 짧을 수 있으니 뛰어서 건너지 말고 신호등을 직접 확인하세요."; }
   }
 }
+function renderLog() {
+  const box = $("log"); if (!box) return;
+  const ev = selected ? dedupe(records[selected.id] || []).slice(-6).reverse() : [];
+  box.innerHTML = "";
+  ev.forEach((e, i) => {
+    const prev = ev[i + 1], row = document.createElement("div"); row.className = "logrow";
+    const gap = prev && e.t - prev.t < 600000 ? ` +${Math.round((e.t - prev.t) / 1000)}초` : "";
+    row.innerHTML = `<span class="ld" style="background:var(--${e.k === "g" ? "green" : "red"})"></span><span></span><time></time>`;
+    row.children[1].textContent = (e.k === "g" ? "초록 켜짐" : "빨강 바뀜") + gap;
+    row.children[2].textContent = new Date(e.t).toLocaleString("ko-KR", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit" });
+    box.appendChild(row);
+  });
+  box.hidden = !ev.length;
+}
 function record(k) {
   if (!selected) return;
   const t = Date.now();
-  (records[selected.id] = records[selected.id] || []).push({ t, k });
+  const list = records[selected.id] = records[selected.id] || [];
+  const last = [...list].sort((a, b) => a.t - b.t).pop();
+  if (last && last.k === k && t - last.t < DUP_MS) {
+    $("toast").textContent = `방금 누른 기록이 있어서 처음 누른 시각(${new Date(last.t).toLocaleTimeString("ko-KR")})으로 저장했어요`;
+    return;
+  }
+  list.push({ t, k });
   if (records[selected.id].length > 300) records[selected.id] = records[selected.id].slice(-300);
   saveRecords();
   $("toast").textContent = `${k === "g" ? "초록 켜짐" : "빨강 바뀜"} 기록 · ${new Date(t).toLocaleTimeString("ko-KR")}`;

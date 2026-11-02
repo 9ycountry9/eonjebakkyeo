@@ -68,6 +68,10 @@ h2{font-size:17px;margin:0 0 4px}
 .tap span{font-size:11px;font-weight:600;opacity:.9}
 .row2{display:flex;justify-content:space-between;align-items:center;gap:8px;min-height:20px}
 .link{border:0;background:none;color:var(--muted);text-decoration:underline;font-size:12px;padding:2px}
+.log{display:flex;flex-direction:column;border-top:1px solid var(--line)}
+.logrow{display:grid;grid-template-columns:10px 1fr auto;gap:10px;align-items:center;padding:6px 0;font-size:13px;border-bottom:1px solid var(--line)}
+.logrow .ld{width:10px;height:10px;border-radius:50%}
+.logrow time{font-family:var(--digits);font-variant-numeric:tabular-nums;color:var(--muted)}
 .note{font-size:11px;color:var(--muted);margin:0;line-height:1.5}
 .me{width:18px;height:18px;border-radius:50%;background:#2a7de1;border:3px solid #fff;box-shadow:0 0 0 6px rgba(42,125,225,.25)}
 .leaflet-container{font-family:var(--body)}
