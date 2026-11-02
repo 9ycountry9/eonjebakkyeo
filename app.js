@@ -82,17 +82,27 @@ function predict(cw, now) {
 }
 
 // ---------------- 지도 ----------------
-// 남한(제주·울릉도·독도 포함) 밖으로는 못 나가게 고정
-const KOREA = L.latLngBounds([32.8, 124.4], [38.9, 132.1]);
+// 남한(제주·울릉도·독도·서해5도 포함)만 보이게: 남한 밖은 가리고, 밖으로 못 나가게 고정
+const KOREA = L.latLngBounds([33.0, 124.4], [38.75, 132.05]);
 const map = L.map("map", {
   zoomControl: false, attributionControl: true,
-  maxBounds: KOREA, maxBoundsViscosity: 1.0, minZoom: 6
+  maxBounds: KOREA.pad(0.02), maxBoundsViscosity: 1.0, zoomSnap: 0.25
 });
-map.fitBounds(KOREA);
+function fitKoreaZoom() {
+  const z = map.getBoundsZoom(KOREA, false);       // 남한 전체가 화면에 딱 들어오는 줌
+  map.setMinZoom(z);
+  if (map.getZoom() < z || !map._loaded) map.fitBounds(KOREA);
+}
+fitKoreaZoom();
+window.addEventListener("resize", () => { map.invalidateSize(); fitKoreaZoom(); });
 L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
   maxZoom: 19, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
 }).addTo(map);
-const renderer = L.canvas({ padding: 0.3 });
+map.createPane("mask"); map.getPane("mask").style.zIndex = 450; map.getPane("mask").style.pointerEvents = "none";
+fetch("data/korea.json").then(r => r.json()).then(holes => {
+  const world = [[-89, -179], [-89, 179], [89, 179], [89, -179]];
+  L.polygon([world, ...holes], { pane: "mask", stroke: false, fillColor: getVar("--bg"), fillOpacity: 1, interactive: false }).addTo(map);
+}).catch(() => {});
 const layer = L.layerGroup().addTo(map);
 let me = null, meMarker = null, selected = null, following = false;
 
@@ -102,17 +112,51 @@ function colorFor(cw) {
   if (p.state === "ok") return p.phase < (p.green || 0) * 1000 ? getVar("--green") : getVar("--red");
   return cw.green && cw.red ? getVar("--amber") : getVar("--gray");
 }
+function lampState(cw) {
+  if (cw.button) return "btn";
+  const p = predict(cw, Date.now());
+  if (p.state === "ok") return p.phase < (p.green || 0) * 1000 ? "green" : "red";
+  return "unk";
+}
 const getVar = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
 
+// 가까운 순서 목록 (지도 번호와 목록 번호를 맞추기 위해 한 곳에서 계산)
+function nearList() {
+  const center = me || [map.getCenter().lat, map.getCenter().lng];
+  return all.map(cw => ({ cw, d: dist(center, [cw.lat, cw.lon]) })).filter(x => x.d <= NEAR_M).sort((a, b) => a.d - b.d).slice(0, 8);
+}
+// 단순한 사각 신호등 아이콘 (켜진 쪽만 밝게)
+const LAMP = {
+  red:   { on: ["#ff7a72", "#ff2e25"], off: ["#5e2a28", "#4a1f1e"] },
+  green: { on: ["#8be07f", "#27c24a"], off: ["#2c4a30", "#203a24"] }
+};
+function lightSvg(st) {
+  const r = LAMP.red[st === "red" ? "on" : "off"], g = LAMP.green[st === "green" ? "on" : "off"];
+  const lamp = (cy, [rim, core]) => `<circle cx="22" cy="${cy}" r="13" fill="#0b0b0b"/><circle cx="22" cy="${cy}" r="11" fill="${rim}"/><circle cx="22" cy="${cy}" r="8.5" fill="${core}"/>`;
+  return `<svg viewBox="0 0 44 68" width="22" height="34" aria-hidden="true">
+    <rect x="1" y="1" width="42" height="66" rx="9" fill="#141414" stroke="#fff" stroke-width="2"/>
+    <rect x="5" y="5" width="34" height="58" rx="6" fill="#363636"/>
+    ${lamp(20, r)}${lamp(48, g)}</svg>`;
+}
+function lightIcon(cw, num) {
+  const st = lampState(cw), sel = cw === selected ? " sel" : "";
+  return L.divIcon({
+    className: "", iconSize: [22, 34], iconAnchor: [11, 17],
+    html: `<div class="tl s-${st}${sel}">${lightSvg(st)}${num ? `<b>${num}</b>` : ""}${st === "unk" ? '<em>?</em>' : ""}</div>`
+  });
+}
 function drawMarkers() {
   layer.clearLayers();
   if (map.getZoom() < MIN_ZOOM_MARKERS) return;
+  const nums = new Map(nearList().map((x, i) => [x.cw, i + 1]));
   const b = map.getBounds().pad(0.2);
   for (const cw of all) {
     if (!b.contains([cw.lat, cw.lon])) continue;
-    const m = L.circleMarker([cw.lat, cw.lon], {
-      renderer, radius: cw === selected ? 10 : 7, weight: cw === selected ? 3 : 2,
-      color: "#fff", fillColor: colorFor(cw), fillOpacity: 1
+    const num = nums.get(cw);
+    const m = L.marker([cw.lat, cw.lon], {
+      icon: lightIcon(cw, num), keyboard: false,
+      zIndexOffset: cw === selected ? 1000 : num ? 500 - num : 0,
+      title: `${num ? num + "번 · " : ""}${cw.addr || "횡단보도"}`
     });
     m.on("click", () => openDetail(cw));
     m.addTo(layer);
@@ -171,21 +215,21 @@ function shortStatus(cw) {
 function renderNear() {
   if ($("vNear").hidden) return;
   const center = me || [map.getCenter().lat, map.getCenter().lng];
-  const list = all.map(cw => ({ cw, d: dist(center, [cw.lat, cw.lon]) })).filter(x => x.d <= NEAR_M).sort((a, b) => a.d - b.d).slice(0, 8);
+  const list = nearList();
   renderFavs();
   const box = $("nearList"); box.innerHTML = "";
   if (!list.length) {
     box.innerHTML = `<p class="muted small">${me ? "400m 안에 신호 있는 횡단보도 데이터가 없어요." : "지도 가운데 주변에 데이터가 없어요."} 지도를 움직여 보세요. 지금 데이터는 전국 일부 지역만 들어 있어요.</p>`;
     return;
   }
-  for (const { cw, d } of list) {
+  list.forEach(({ cw, d }, i) => {
     const [t, s] = shortStatus(cw);
     const b = document.createElement("button"); b.type = "button"; b.className = "item";
-    b.innerHTML = `<span class="dot" style="background:${colorFor(cw)}"></span><span class="a"></span><span class="r">${t}<small>${s}</small></span>`;
+    b.innerHTML = `<span class="num" style="background:${colorFor(cw)}">${i + 1}</span><span class="a"></span><span class="r">${t}<small>${s}</small></span>`;
     b.querySelector(".a").textContent = `${dir8(center, [cw.lat, cw.lon])} ${Math.round(d)}m · ${cw.addr || "주소 없음"}${cw.lanes ? " · " + cw.lanes + "차로" : ""} · #${cw.id.slice(-4)}`;
     b.onclick = () => openDetail(cw);
     box.appendChild(b);
-  }
+  });
 }
 
 // ---------------- 즐겨찾기 (이 폰 안에만) ----------------
@@ -266,11 +310,56 @@ function closeCover() { const c = $("cover"); c.classList.add("out"); setTimeout
 $("startLoc").onclick = () => { closeCover(); startLocation(); };
 $("startMap").onclick = () => { closeCover(); showNear(); };
 
+// ---------------- 아래 시트: 끌어서 내리고 올리기 ----------------
+const sheet = $("sheet");
+const SNAP = { peek: () => 96, half: () => Math.round(window.innerHeight * 0.45), full: () => Math.round(window.innerHeight * 0.85) };
+let sheetState = "half";
+const sheetH = () => sheet.getBoundingClientRect().height;
+function setSheet(state, animate = true) {
+  sheetState = state;
+  sheet.style.transition = animate ? "height .25s ease" : "none";
+  sheet.style.height = SNAP[state]() + "px";
+  sheet.classList.toggle("peek", state === "peek");
+  $("grip").setAttribute("aria-expanded", state !== "peek");
+  setTimeout(() => { map.invalidateSize(); if (selected) focusOn(selected); }, animate ? 260 : 0);
+}
+// 지도 위 선택한 신호등이 시트에 가리지 않게 시트 위 빈 공간 가운데로 이동
+function focusOn(cw) {
+  const visibleH = window.innerHeight - sheetH();
+  const target = map.project([cw.lat, cw.lon], map.getZoom()).add([0, (window.innerHeight / 2) - visibleH / 2]);
+  map.panTo(map.unproject(target, map.getZoom()), { animate: true });
+}
+(function dragSheet() {
+  const g = $("grip"); let startY = 0, startH = 0, moved = false, dragging = false;
+  g.addEventListener("pointerdown", e => { dragging = true; moved = false; startY = e.clientY; startH = sheetH(); g.setPointerCapture(e.pointerId); sheet.style.transition = "none"; });
+  g.addEventListener("pointermove", e => {
+    if (!dragging) return;
+    const dy = startY - e.clientY; if (Math.abs(dy) > 4) moved = true;
+    sheet.style.height = Math.max(SNAP.peek(), Math.min(SNAP.full(), startH + dy)) + "px";
+  });
+  g.addEventListener("pointerup", () => {
+    if (!dragging) return; dragging = false;
+    if (!moved) { setSheet(sheetState === "peek" ? "half" : "peek"); return; }   // 그냥 누르면 접기/펼치기
+    const h = sheetH(); let best = "half", bd = 1e9;
+    for (const k of Object.keys(SNAP)) { const d = Math.abs(SNAP[k]() - h); if (d < bd) { bd = d; best = k; } }
+    setSheet(best);
+  });
+  g.addEventListener("keydown", e => {
+    if (e.key === "ArrowUp") { e.preventDefault(); setSheet(sheetState === "peek" ? "half" : "full"); }
+    if (e.key === "ArrowDown") { e.preventDefault(); setSheet(sheetState === "full" ? "half" : "peek"); }
+  });
+  g.addEventListener("click", e => { if (e.detail === 0) setSheet(sheetState === "peek" ? "half" : "peek"); }); // 키보드 Enter
+  window.addEventListener("resize", () => setSheet(sheetState, false));
+})();
+setSheet("half", false);
+
 // ---------------- 시트: 상세 ----------------
 function openDetail(cw) {
   selected = cw; lastSpoken = null; $("vIntro").hidden = true; $("vNear").hidden = true; $("vDetail").hidden = false;
   $("soundInfo").hidden = !cw.sound;
   renderFavBtn();
+  if (sheetH() > window.innerHeight * 0.6) setSheet("half");
+  focusOn(cw);
   $("dAddr").textContent = cw.addr || "주소 없음";
   const meta = [];
   if (cw.green && cw.red) meta.push(`데이터상 초록 ${cw.green}초 · 빨강 ${cw.red}초`);

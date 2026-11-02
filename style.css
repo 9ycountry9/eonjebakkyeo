@@ -28,11 +28,15 @@ button:focus-visible{outline:3px solid var(--amber);outline-offset:2px}
 .fab.on{color:#2a7de1}
 
 .sheet{position:fixed;left:0;right:0;bottom:0;z-index:600;background:var(--surface);border-radius:20px 20px 0 0;
-  box-shadow:0 -4px 20px rgba(0,0,0,.18);max-height:62vh;overflow-y:auto;
-  padding:8px max(16px,env(safe-area-inset-right,0px)) calc(14px + env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px));
+  box-shadow:0 -4px 20px rgba(0,0,0,.18);height:45vh;overflow-y:auto;overscroll-behavior:contain;
+  padding:0 max(16px,env(safe-area-inset-right,0px)) calc(14px + env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px));
   display:flex;flex-direction:column;gap:12px}
 .sheet>*{max-width:520px;width:100%;margin:0 auto}
-.grip{width:40px;height:4px;border-radius:2px;background:var(--line)}
+.grip{position:sticky;top:0;z-index:2;flex:none;max-width:none!important;width:calc(100% + 32px)!important;margin:0 -16px!important;height:30px;border:0;background:var(--surface);
+  display:grid;place-items:center;cursor:grab;touch-action:none;border-radius:20px 20px 0 0}
+.grip span{width:44px;height:5px;border-radius:3px;background:var(--line)}
+.grip:active{cursor:grabbing}
+.sheet.peek>*:not(.grip):not(#vNear):not(#vDetail){display:none}
 h2{font-size:17px;margin:0 0 4px}
 .muted{color:var(--muted)} .small{font-size:12px}
 .primary{width:100%;border:0;border-radius:14px;padding:14px;background:var(--green);color:#fff;font-size:16px;font-weight:800;margin-top:8px}
@@ -40,7 +44,9 @@ h2{font-size:17px;margin:0 0 4px}
 .list{display:flex;flex-direction:column}
 .item{display:grid;grid-template-columns:12px 1fr auto;gap:10px;align-items:center;padding:10px 2px;border:0;border-top:1px solid var(--line);background:none;color:inherit;text-align:left;font-size:14px;width:100%}
 .item:first-child{border-top:0}
-.item .dot{width:12px;height:12px;border-radius:50%}
+.item{grid-template-columns:24px 1fr auto!important}
+.item .dot{width:12px;height:12px;border-radius:50%;justify-self:center}
+.item .num{width:22px;height:22px;border-radius:50%;color:#fff;font-size:12px;font-weight:800;display:grid;place-items:center;font-family:var(--body)}
 .item .a{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .item .r{font-family:var(--digits);font-size:17px;font-variant-numeric:tabular-nums;text-align:right}
 .item .r small{display:block;font-family:var(--body);font-size:11px;color:var(--muted)}
@@ -89,5 +95,15 @@ h2{font-size:17px;margin:0 0 4px}
 .sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 .note{font-size:11px;color:var(--muted);margin:0;line-height:1.5}
 .me{width:18px;height:18px;border-radius:50%;background:#2a7de1;border:3px solid #fff;box-shadow:0 0 0 6px rgba(42,125,225,.25)}
-.leaflet-container{font-family:var(--body)}
+.leaflet-container{font-family:var(--body);background:var(--bg)}
+/* 지도 위 신호등 아이콘 */
+.tl{position:relative;width:22px;height:34px;filter:drop-shadow(0 1px 2px rgba(0,0,0,.45));transition:transform .15s}
+.tl svg{display:block}
+.tl.s-btn svg rect:first-child{stroke:#a98af0}
+.tl.sel{transform:scale(1.4);z-index:2}
+.tl.sel svg rect:first-child{stroke:#f2a516;stroke-width:3}
+.tl b{position:absolute;top:-9px;right:-12px;min-width:18px;height:18px;padding:0 4px;border-radius:9px;background:#fff;color:#1d2420;
+  font:800 11px/18px var(--body);text-align:center;box-shadow:0 1px 3px rgba(0,0,0,.4)}
+.tl em{position:absolute;bottom:-6px;left:-8px;width:15px;height:15px;border-radius:50%;background:#8a948f;color:#fff;
+  font:800 10px/15px var(--body);font-style:normal;text-align:center;border:1.5px solid #fff}
 @media (prefers-reduced-motion:reduce){.tap:active{transform:none}}
