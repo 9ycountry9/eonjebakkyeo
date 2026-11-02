@@ -82,7 +82,13 @@ function predict(cw, now) {
 }
 
 // ---------------- 지도 ----------------
-const map = L.map("map", { zoomControl: false, attributionControl: true }).setView([36.35, 127.8], 7);
+// 남한(제주·울릉도·독도 포함) 밖으로는 못 나가게 고정
+const KOREA = L.latLngBounds([32.8, 124.4], [38.9, 132.1]);
+const map = L.map("map", {
+  zoomControl: false, attributionControl: true,
+  maxBounds: KOREA, maxBoundsViscosity: 1.0, minZoom: 6
+});
+map.fitBounds(KOREA);
 L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
   maxZoom: 19, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
 }).addTo(map);
@@ -158,12 +164,15 @@ function shortStatus(cw) {
   if (p.state === "ok") return [mmss(p.left), "초록까지 약"];
   if (p.state === "nodata") return ["-", "탭해서 기록"];
   if (p.state === "needtap") return ["?", "초록 켜질 때 탭"];
+  if (p.state === "needcycle") return ["?", "초록 한 번 더 탭"];
+  if (p.state === "irregular") return ["!", "예측 어려움"];
   return ["!", "다시 기록 필요"];
 }
 function renderNear() {
   if ($("vNear").hidden) return;
   const center = me || [map.getCenter().lat, map.getCenter().lng];
   const list = all.map(cw => ({ cw, d: dist(center, [cw.lat, cw.lon]) })).filter(x => x.d <= NEAR_M).sort((a, b) => a.d - b.d).slice(0, 8);
+  renderFavs();
   const box = $("nearList"); box.innerHTML = "";
   if (!list.length) {
     box.innerHTML = `<p class="muted small">${me ? "400m 안에 신호 있는 횡단보도 데이터가 없어요." : "지도 가운데 주변에 데이터가 없어요."} 지도를 움직여 보세요. 지금 데이터는 전국 일부 지역만 들어 있어요.</p>`;
@@ -179,9 +188,89 @@ function renderNear() {
   }
 }
 
+// ---------------- 즐겨찾기 (이 폰 안에만) ----------------
+const FAV_KEY = "ujbk-favs-v1";
+let favs = [];
+try { favs = JSON.parse(localStorage.getItem(FAV_KEY) || "[]"); } catch (e) { favs = []; }
+const saveFavs = () => { try { localStorage.setItem(FAV_KEY, JSON.stringify(favs)); } catch (e) {} };
+const isFav = cw => favs.some(f => f.id === cw.id);
+const resolve = f => all.find(x => x.id === f.id) || f;
+function toggleFav() {
+  if (!selected) return;
+  if (isFav(selected)) favs = favs.filter(f => f.id !== selected.id);
+  else favs.push({ ...selected, name: selected.addr });
+  saveFavs(); renderFavBtn();
+  say(isFav(selected) ? "즐겨찾기에 추가했어요" : "즐겨찾기에서 뺐어요");
+}
+function renderFavBtn() {
+  const on = !!selected && isFav(selected), b = $("fav");
+  b.textContent = on ? "★" : "☆"; b.setAttribute("aria-pressed", on);
+  b.setAttribute("aria-label", on ? "즐겨찾기에서 빼기" : "즐겨찾기에 추가");
+}
+function renderFavs() {
+  const box = $("favList"); box.innerHTML = "";
+  $("favBox").hidden = !favs.length;
+  for (const f of favs) {
+    const cw = resolve(f), [t, s] = shortStatus(cw);
+    const b = document.createElement("button"); b.type = "button"; b.className = "item";
+    b.innerHTML = `<span class="dot" style="background:${colorFor(cw)}"></span><span class="a"></span><span class="r">${t}<small>${s}</small></span>`;
+    b.querySelector(".a").textContent = `★ ${cw.addr || "주소 없음"} · #${cw.id.slice(-4)}`;
+    b.onclick = () => { map.setView([cw.lat, cw.lon], Math.max(map.getZoom(), 17)); following = false; $("locate").classList.remove("on"); openDetail(cw); };
+    box.appendChild(b);
+  }
+}
+$("fav").onclick = toggleFav;
+
+// ---------------- 음성 안내 (시각장애인용, 분 단위) ----------------
+let voiceOn = false, lastSpoken = null;
+try { voiceOn = localStorage.getItem("ujbk-voice") === "1"; } catch (e) {}
+function say(text) {
+  $("sr").textContent = text;                    // 화면낭독기(톡백·보이스오버)용
+  if (!voiceOn || !("speechSynthesis" in window)) return;
+  speechSynthesis.cancel();
+  const u = new SpeechSynthesisUtterance(text); u.lang = "ko-KR"; u.rate = 1;
+  speechSynthesis.speak(u);
+}
+function renderVoiceBtn() {
+  const b = $("voice"); b.setAttribute("aria-pressed", voiceOn);
+  b.setAttribute("aria-label", voiceOn ? "음성 안내 끄기" : "음성 안내 켜기");
+}
+$("voice").onclick = () => {
+  voiceOn = !voiceOn; try { localStorage.setItem("ujbk-voice", voiceOn ? "1" : "0"); } catch (e) {}
+  renderVoiceBtn(); lastSpoken = null;
+  if (!("speechSynthesis" in window)) { $("toast").textContent = "이 브라우저는 음성 안내를 지원하지 않아요."; return; }
+  if (voiceOn) say(selected ? "음성 안내를 켰어요. 남은 시간을 1분마다 알려드릴게요." : "음성 안내를 켰어요. 횡단보도를 고르면 남은 시간을 1분마다 알려드릴게요.");
+  else { speechSynthesis.cancel(); $("sr").textContent = "음성 안내를 껐어요"; }
+};
+// 1분 단위로 바뀔 때, 그리고 10초 남았을 때 한 번 말함. "건너세요"는 절대 말하지 않음.
+function voiceTick(p) {
+  if (!selected) return;
+  let key = null, text = null;
+  if (p.state !== "ok") {
+    key = "s:" + p.state;
+    text = { button: "버튼을 눌러야 바뀌는 신호예요. 예측할 수 없어요.", nodata: "이 횡단보도는 아직 기록이 없어서 예측할 수 없어요.",
+      needcycle: "기록이 더 필요해서 아직 예측할 수 없어요.", needtap: "아직 기록이 없어서 예측할 수 없어요.",
+      irregular: "신호 주기가 일정하지 않아 예측이 어려운 횡단보도예요.", stale: "기록이 오래돼서 예측할 수 없어요." }[p.state];
+  }
+  else {
+    const m = Math.ceil(p.left / 60);
+    if (p.left <= 10) { key = "soon"; text = "곧 초록불로 바뀔 것으로 예상돼요. 실제 신호와 음향신호기 소리를 확인하세요."; }
+    else { key = "m" + m; text = m <= 1 ? "1분 안에 초록불 예상" : `약 ${m}분 후 초록불 예상`; }
+  }
+  key = selected.id + "|" + key;
+  if (key !== lastSpoken) { lastSpoken = key; say(text); }
+}
+
+// ---------------- 표지 ----------------
+function closeCover() { const c = $("cover"); c.classList.add("out"); setTimeout(() => { c.hidden = true; }, 400); }
+$("startLoc").onclick = () => { closeCover(); startLocation(); };
+$("startMap").onclick = () => { closeCover(); showNear(); };
+
 // ---------------- 시트: 상세 ----------------
 function openDetail(cw) {
-  selected = cw; $("vIntro").hidden = true; $("vNear").hidden = true; $("vDetail").hidden = false;
+  selected = cw; lastSpoken = null; $("vIntro").hidden = true; $("vNear").hidden = true; $("vDetail").hidden = false;
+  $("soundInfo").hidden = !cw.sound;
+  renderFavBtn();
   $("dAddr").textContent = cw.addr || "주소 없음";
   const meta = [];
   if (cw.green && cw.red) meta.push(`데이터상 초록 ${cw.green}초 · 빨강 ${cw.red}초`);
@@ -205,6 +294,7 @@ function renderDetail() {
   $("tapG").disabled = $("tapR").disabled = p.state === "button";
   $("undo").hidden = !(records[selected.id] || []).length;
   renderLog();
+  try { voiceTick(p); } catch (e) {}
   const txt = (m, s) => { big.className = "big txt"; big.textContent = m; sub.textContent = s || ""; };
   switch (p.state) {
     case "button": return txt("버튼을 눌러야 바뀌는 신호예요", "예측할 수 없어요. 신호등의 보행자 버튼을 눌러주세요.");
@@ -262,11 +352,12 @@ $("undo").onclick = () => {
 };
 
 // ---------------- 시작 ----------------
+renderVoiceBtn();
 setInterval(() => { renderDetail(); renderNear(); }, 1000);
 setInterval(drawMarkers, 5000);
 loadIndex().then(() => ensureRegionsFor(map.getBounds())).then(() => { drawMarkers(); })
   .catch(() => { $("introMsg").textContent = "횡단보도 데이터를 불러오지 못했어요. 인터넷 연결을 확인하고 새로고침해 주세요."; });
 if (navigator.permissions?.query) {
-  navigator.permissions.query({ name: "geolocation" }).then(s => { if (s.state === "granted") startLocation(); }).catch(() => {});
+  navigator.permissions.query({ name: "geolocation" }).then(s => { if (s.state === "granted") { startLocation(); setTimeout(closeCover, 1200); } }).catch(() => {});
 }
 if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});

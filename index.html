@@ -21,6 +21,24 @@
   <span class="chip">예상치</span>
 </header>
 
+<!-- 표지 -->
+<div id="cover" class="cover" role="dialog" aria-label="언제바껴 시작 화면">
+  <div class="cover-in">
+    <img src="mascot.svg" alt="신호등 옆에서 기다리는 카피바라" class="mascot">
+    <h1 class="ctitle"><span>언제</span>바껴</h1>
+    <p class="csub">내 주변 횡단보도, 다음 초록불까지 얼마나 남았을까요?</p>
+    <button id="startLoc" class="primary" type="button">내 위치로 시작하기</button>
+    <button id="startMap" class="ghost" type="button">지도 먼저 볼게요</button>
+    <p class="muted small">가입 없이 써요. 위치는 이 폰 안에서만 써요.</p>
+  </div>
+</div>
+
+<div id="sr" class="sr-only" aria-live="polite"></div>
+
+<button id="voice" class="fab fab2" type="button" aria-pressed="false" aria-label="음성 안내 켜기">
+  <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M4 9h4l5-4v14l-5-4H4z" fill="currentColor"/><path id="voiceWave" d="M16 9a4 4 0 0 1 0 6M18.5 6.5a7.5 7.5 0 0 1 0 11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+</button>
+
 <button id="locate" class="fab" type="button" aria-label="내 위치로 이동">
   <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><circle cx="12" cy="12" r="4" fill="currentColor"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="12" cy="12" r="7.5" fill="none" stroke="currentColor" stroke-width="2"/></svg>
 </button>
@@ -38,6 +56,10 @@
 
   <!-- 주변 목록 -->
   <div id="vNear" hidden>
+    <div id="favBox" hidden>
+      <h2>즐겨찾는 횡단보도</h2>
+      <div id="favList" class="list"></div>
+    </div>
     <h2>가까운 신호 횡단보도</h2>
     <div id="nearList" class="list"></div>
   </div>
@@ -47,8 +69,10 @@
     <div class="dhead">
       <button id="back" class="back" type="button" aria-label="목록으로">‹</button>
       <div class="dtitle"><b id="dAddr">-</b><span class="muted small" id="dMeta"></span></div>
+      <button id="fav" class="star" type="button" aria-pressed="false" aria-label="즐겨찾기에 추가">☆</button>
     </div>
-    <div class="pred" aria-live="polite">
+    <div class="sound" id="soundInfo" hidden>이 횡단보도에는 <b>음향신호기</b>가 있어요. 신호등 기둥의 버튼을 누르면 소리로 신호를 알려줘요.</div>
+    <div class="pred">
       <div class="k">다음 초록불까지 <span class="conf" id="conf" hidden></span></div>
       <div class="big" id="big">-</div>
       <div class="muted small" id="sub"></div>

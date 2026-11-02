@@ -1,6 +1,6 @@
 // 앱 화면 파일을 저장해 두어 다시 열 때 빠르게 뜨게 함 (지도 타일과 데이터는 네트워크 우선)
-const CACHE = "ujbk-v1";
-const SHELL = ["./", "index.html", "style.css", "app.js", "manifest.json", "icon.svg"];
+const CACHE = "ujbk-v2";
+const SHELL = ["./", "index.html", "style.css", "app.js", "manifest.json", "icon.svg", "mascot.svg"];
 self.addEventListener("install", e => e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL))));
 self.addEventListener("activate", e => e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k !== CACHE).map(k => caches.delete(k))))));
 self.addEventListener("fetch", e => {
