@@ -16,6 +16,18 @@ function saveRecords() { try { localStorage.setItem(STORE_KEY, JSON.stringify(re
 let regions = [], loaded = {}, all = [];   // all: 로드된 횡단보도 객체들
 async function loadIndex() {
   const r = await fetch("data/regions.json"); regions = (await r.json()).regions;
+  loadUtic().catch(() => {});
+}
+// 경찰청(UTIC) 신호 계획으로 탭 없이 예상하는 횡단보도
+async function loadUtic() {
+  const u = await (await fetch("data/utic.json")).json();
+  uticCenters = u.intersections.map(it => [it.lat, it.lon]);
+  all.forEach(cw => { delete cw._hid; });
+  for (const it of u.intersections) for (const c of it.crosswalks) {
+    all.push({ lat: c.lat, lon: c.lon, green: 0, red: 0, button: false, sound: false, lanes: 0,
+      addr: `${it.name} ${c.side}`, id: c.id, utic: { it, c }, sido: "대전광역시", area: "유성구 전민동" });
+  }
+  drawMarkers();
 }
 async function ensureRegionsFor(bounds) {
   const need = regions.filter(g => !loaded[g.file] &&
@@ -23,7 +35,7 @@ async function ensureRegionsFor(bounds) {
   await Promise.all(need.map(async g => {
     loaded[g.file] = "loading";
     const rows = await (await fetch("data/" + g.file)).json();
-    rows.forEach(r => all.push({ lat: r[0], lon: r[1], green: r[2], red: r[3], button: !!r[4], sound: !!r[5], addr: r[6], id: r[7], lanes: r[8] }));
+    rows.forEach(r => all.push({ lat: r[0], lon: r[1], green: r[2], red: r[3], button: !!r[4], sound: !!r[5], addr: r[6], id: r[7], lanes: r[8], sido: g.name }));
     loaded[g.file] = true;
   }));
 }
@@ -48,7 +60,30 @@ function cycleSamples(ev) {
   for (let i = 1; i < g.length; i++) { const d = (g[i].t - g[i - 1].t) / 1000; if (d >= 40 && d <= 240) out.push(d); }
   return out;
 }
+// 한국 시간 기준 오늘 적용되는 계획 줄
+function uticPlan(it, ms) {
+  const d = new Date(ms + 9 * 3600 * 1000);
+  const dow = d.getUTCDay() === 0 ? 7 : d.getUTCDay();
+  const sec = d.getUTCHours() * 3600 + d.getUTCMinutes() * 60 + d.getUTCSeconds() + d.getUTCMilliseconds() / 1000;
+  let rows = it.plans[it.dayPlan[dow]], row = null;
+  for (const r of rows) if (r[0] <= sec / 60) row = r;
+  if (!row) { const y = dow === 1 ? 7 : dow - 1; rows = it.plans[it.dayPlan[y]]; row = rows[rows.length - 1]; }
+  return { cycle: row[1], offset: row[2], sec, minsSinceChange: (sec / 60 - row[0] + 1440) % 1440 };
+}
+function predictUtic(cw, now) {
+  const { it, c } = cw.utic, p = uticPlan(it, now);
+  const cycle = p.cycle, cms = cycle * 1000;
+  const start = c.start * cycle / it.calCycle;            // 다른 주기에서는 비례한다고 가정
+  const pos = ((p.sec - p.offset) % cycle + cycle) % cycle;
+  const rel = ((pos - start) % cycle + cycle) % cycle;     // 초록 시작 뒤 몇 초 지났나
+  const left = Math.ceil(cycle - rel);
+  const exact = cycle === it.calCycle;                     // 현장에서 잰 주기와 같으면 더 믿을 만함
+  const conf = exact && p.minsSinceChange > 3 ? "mid" : "lo";
+  return { state: "ok", source: "utic", cycle, green: c.walk, cms, phase: rel * 1000, left, err: exact ? 3 : 8,
+    conf, measured: false, next: now + left * 1000, dataCycle: null };
+}
 function predict(cw, now) {
+  if (cw.utic) return predictUtic(cw, now);
   const dataCycle = cw.green && cw.red ? cw.green + cw.red : null;
   const base = { dataCycle, dataGreen: cw.green || null };
   if (cw.button) return { ...base, state: "button" };
@@ -121,9 +156,20 @@ function lampState(cw) {
 const getVar = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
 
 // 가까운 순서 목록 (지도 번호와 목록 번호를 맞추기 위해 한 곳에서 계산)
+let uticCenters = [];
+function hidden(cw) {
+  if (cw.utic) return false;
+  if (cw._hid === undefined) cw._hid = uticCenters.some(c => dist(c, [cw.lat, cw.lon]) < 40);
+  return cw._hid;
+}
+let mode = "me", areaLabel = "", areaList = null;
+const listCenter = () => (mode === "me" && following && me) ? me : [map.getCenter().lat, map.getCenter().lng];
 function nearList() {
-  const center = me || [map.getCenter().lat, map.getCenter().lng];
-  return all.map(cw => ({ cw, d: dist(center, [cw.lat, cw.lon]) })).filter(x => x.d <= NEAR_M).sort((a, b) => a.d - b.d).slice(0, 8);
+  const center = listCenter();
+  if (mode === "area" && areaList) {
+    return areaList.filter(cw => !hidden(cw)).map(cw => ({ cw, d: dist(center, [cw.lat, cw.lon]) })).sort((a, b) => (a.cw.utic ? 0 : 1) - (b.cw.utic ? 0 : 1) || a.d - b.d).slice(0, 15);
+  }
+  return all.filter(cw => !hidden(cw)).map(cw => ({ cw, d: dist(center, [cw.lat, cw.lon]) })).filter(x => x.d <= NEAR_M).sort((a, b) => a.d - b.d).slice(0, 8);
 }
 // 단순한 사각 신호등 아이콘 (켜진 쪽만 밝게)
 const LAMP = {
@@ -151,7 +197,7 @@ function drawMarkers() {
   const nums = new Map(nearList().map((x, i) => [x.cw, i + 1]));
   const b = map.getBounds().pad(0.2);
   for (const cw of all) {
-    if (!b.contains([cw.lat, cw.lon])) continue;
+    if (!b.contains([cw.lat, cw.lon]) || hidden(cw)) continue;
     const num = nums.get(cw);
     const m = L.marker([cw.lat, cw.lon], {
       icon: lightIcon(cw, num), keyboard: false,
@@ -174,7 +220,14 @@ function startLocation() {
     me = [pos.coords.latitude, pos.coords.longitude];
     if (!meMarker) meMarker = L.marker(me, { icon: L.divIcon({ className: "", html: '<div class="me"></div>', iconSize: [18, 18] }), interactive: false }).addTo(map);
     else meMarker.setLatLng(me);
-    if (first) { following = true; $("locate").classList.add("on"); map.setView(me, 17); showNear(); }
+    const inKorea = KOREA.contains(me);
+    if (first && !inKorea) {
+      showNear(); setMode("area");
+      $("whereMsg").hidden = false;
+      $("whereMsg").textContent = "지금 위치가 한국 밖으로 잡혀요. 에뮬레이터라면 기본 위치(미국)일 수 있어요. 지역을 검색하거나 골라 주세요.";
+      return;
+    }
+    if (first) { following = true; $("locate").classList.add("on"); map.setView(me, 17); showNear(); setMode("me"); }
     else if (following) map.panTo(me, { animate: true });
     renderNear();
   }, err => {
@@ -185,7 +238,7 @@ function startLocation() {
   }, { enableHighAccuracy: true, maximumAge: 5000, timeout: 20000 });
 }
 $("allow").onclick = startLocation;
-$("locate").onclick = () => { if (!me) { startLocation(); return; } following = true; $("locate").classList.add("on"); map.setView(me, Math.max(map.getZoom(), 17)); };
+$("locate").onclick = () => { if (!me) { startLocation(); return; } if (!KOREA.contains(me)) { $("whereMsg").hidden = false; return; } setMode("me"); following = true; $("locate").classList.add("on"); map.setView(me, Math.max(map.getZoom(), 17)); };
 
 // ---------------- 시트: 주변 목록 ----------------
 function dist(a, b) {
@@ -214,19 +267,20 @@ function shortStatus(cw) {
 }
 function renderNear() {
   if ($("vNear").hidden) return;
-  const center = me || [map.getCenter().lat, map.getCenter().lng];
+  const center = listCenter();
+  $("nearTitle").textContent = mode === "me" && following && me ? "내 주변 신호 횡단보도" : areaList ? `${areaLabel} 신호 횡단보도 (지도 가운데부터)` : "지도 가운데 주변 신호 횡단보도";
   const list = nearList();
   renderFavs();
   const box = $("nearList"); box.innerHTML = "";
   if (!list.length) {
-    box.innerHTML = `<p class="muted small">${me ? "400m 안에 신호 있는 횡단보도 데이터가 없어요." : "지도 가운데 주변에 데이터가 없어요."} 지도를 움직여 보세요. 지금 데이터는 전국 일부 지역만 들어 있어요.</p>`;
+    box.innerHTML = `<p class="muted small">${mode === "me" && me ? "내 위치 400m 안에 신호 있는 횡단보도 데이터가 없어요." : "지도 가운데 400m 안에 데이터가 없어요."} 위에서 지역을 검색하거나 골라 보세요. 지금 데이터는 전국 일부 지역만 들어 있어요.</p>`;
     return;
   }
   list.forEach(({ cw, d }, i) => {
     const [t, s] = shortStatus(cw);
     const b = document.createElement("button"); b.type = "button"; b.className = "item";
     b.innerHTML = `<span class="num" style="background:${colorFor(cw)}">${i + 1}</span><span class="a"></span><span class="r">${t}<small>${s}</small></span>`;
-    b.querySelector(".a").textContent = `${dir8(center, [cw.lat, cw.lon])} ${Math.round(d)}m · ${cw.addr || "주소 없음"}${cw.lanes ? " · " + cw.lanes + "차로" : ""} · #${cw.id.slice(-4)}`;
+    b.querySelector(".a").textContent = `${dir8(center, [cw.lat, cw.lon])} ${Math.round(d)}m · ${cw.addr || "주소 없음"}${cw.lanes ? " · " + cw.lanes + "차로" : ""}${cw.utic ? "" : " · #" + cw.id.slice(-4)}`;
     b.onclick = () => openDetail(cw);
     box.appendChild(b);
   });
@@ -258,7 +312,7 @@ function renderFavs() {
     const cw = resolve(f), [t, s] = shortStatus(cw);
     const b = document.createElement("button"); b.type = "button"; b.className = "item";
     b.innerHTML = `<span class="dot" style="background:${colorFor(cw)}"></span><span class="a"></span><span class="r">${t}<small>${s}</small></span>`;
-    b.querySelector(".a").textContent = `★ ${cw.addr || "주소 없음"} · #${cw.id.slice(-4)}`;
+    b.querySelector(".a").textContent = `★ ${cw.addr || "주소 없음"}${cw.utic ? "" : " · #" + cw.id.slice(-4)}`;
     b.onclick = () => { map.setView([cw.lat, cw.lon], Math.max(map.getZoom(), 17)); following = false; $("locate").classList.remove("on"); openDetail(cw); };
     box.appendChild(b);
   }
@@ -362,14 +416,15 @@ function openDetail(cw) {
   focusOn(cw);
   $("dAddr").textContent = cw.addr || "주소 없음";
   const meta = [];
-  if (cw.green && cw.red) meta.push(`데이터상 초록 ${cw.green}초 · 빨강 ${cw.red}초`);
+  if (cw.utic) meta.push("경찰청 신호 계획으로 자동 계산 · 탭 필요 없음");
+  else if (cw.green && cw.red) meta.push(`데이터상 초록 ${cw.green}초 · 빨강 ${cw.red}초`);
   else meta.push("신호 시간 데이터 없음");
   if (cw.lanes) meta.push(`${cw.lanes}차로`);
   if (cw.sound) meta.push("음향신호기");
   if (me) meta.push(`${dir8(me, [cw.lat, cw.lon])} ${Math.round(dist(me, [cw.lat, cw.lon]))}m`);
   const same = all.filter(x => x.lat === cw.lat && x.lon === cw.lon).length;
   if (same > 1) meta.push(`같은 위치에 횡단보도 ${same}개가 함께 등록돼 있어 방향 구분이 어려워요`);
-  meta.push("#" + cw.id.slice(-4));
+  if (!cw.utic) meta.push("#" + cw.id.slice(-4));
   $("dMeta").textContent = meta.join(" · ");
   $("toast").textContent = "";
   renderDetail(); drawMarkers();
@@ -381,6 +436,7 @@ function renderDetail() {
   const big = $("big"), warn = $("warn"), conf = $("conf"), track = $("track"), sub = $("sub");
   warn.hidden = true; track.hidden = true; conf.hidden = true; sub.textContent = "";
   $("tapG").disabled = $("tapR").disabled = p.state === "button";
+  document.querySelector(".taps").hidden = !!selected.utic;
   $("undo").hidden = !(records[selected.id] || []).length;
   renderLog();
   try { voiceTick(p); } catch (e) {}
@@ -395,7 +451,8 @@ function renderDetail() {
   }
   big.className = "big"; big.innerHTML = "<small>약</small>" + mmss(p.left);
   const at = new Date(p.next).toLocaleTimeString("ko-KR", { hour: "numeric", minute: "2-digit", second: "2-digit" });
-  let s = `${at}쯤 · 오차 ±${p.err}초 · 주기 ${Math.round(p.cycle)}초${p.measured ? "(측정)" : "(데이터)"}`;
+  let s = `${at}쯤 · 오차 ±${p.err}초 · 주기 ${Math.round(p.cycle)}초${p.source === "utic" ? "(경찰청 계획)" : p.measured ? "(측정)" : "(데이터)"}`;
+  if (p.source === "utic") s += " · 신호정보: 경찰청(UTIC), 2023년 계획 + 현장 보정";
   if (p.measured && p.dataCycle && Math.abs(p.cycle - p.dataCycle) > 5) s += ` · 데이터 ${p.dataCycle}초와 달라요`;
   sub.textContent = s;
   conf.hidden = false; conf.className = "conf " + p.conf; conf.textContent = { hi: "믿을 만함", mid: "참고용", lo: "부정확할 수 있음" }[p.conf];
@@ -439,6 +496,102 @@ $("undo").onclick = () => {
   const ev = records[selected?.id]; if (!ev || !ev.length) return;
   ev.sort((a, b) => a.t - b.t).pop(); saveRecords(); $("toast").textContent = "마지막 기록을 지웠어요"; renderDetail(); drawMarkers();
 };
+
+// ---------------- 검색·지역 고르기 ----------------
+async function loadRegion(g) {
+  if (loaded[g.file] === true) return;
+  if (loaded[g.file] === "loading") { while (loaded[g.file] !== true) await new Promise(r => setTimeout(r, 80)); return; }
+  loaded[g.file] = "loading";
+  const rows = await (await fetch("data/" + g.file)).json();
+  rows.forEach(r => all.push({ lat: r[0], lon: r[1], green: r[2], red: r[3], button: !!r[4], sound: !!r[5], addr: r[6], id: r[7], lanes: r[8], sido: g.name }));
+  loaded[g.file] = true;
+}
+const loadAllRegions = () => Promise.all(regions.map(loadRegion));
+const SIDO_SHORT = { "경상남도": "경남", "경상북도": "경북", "전라남도": "전남", "전라북도": "전북", "충청남도": "충남", "충청북도": "충북" };
+const shortSido = n => SIDO_SHORT[n] || n.replace(/(특별자치도|특별자치시|광역시|특별시)$/, "").replace(/도$/, "") || n;
+const areaOf = cw => cw.area || (cw.addr || "").split(" ").slice(0, 2).join(" ");
+function setMode(m) {
+  mode = m; if (m === "me") { areaList = null; areaLabel = ""; }
+  $("modeMe").setAttribute("aria-pressed", m === "me");
+  $("modeArea").setAttribute("aria-pressed", m === "area");
+  $("areaPick").hidden = m !== "area";
+  if (m === "area") { following = false; $("locate").classList.remove("on"); renderSido(); }
+  renderNear();
+}
+function goTo(points, label) {
+  if (!points.length) return;
+  areaLabel = label; areaList = points; following = false; $("locate").classList.remove("on");
+  if (mode !== "area") { mode = "area"; $("modeMe").setAttribute("aria-pressed", false); $("modeArea").setAttribute("aria-pressed", true); }
+  const b = L.latLngBounds(points.map(c => [c.lat, c.lon]));
+  map.fitBounds(b, { maxZoom: 17, paddingTopLeft: [20, 70], paddingBottomRight: [20, sheetH() + 20] });
+  $("results").hidden = true;
+  setTimeout(renderNear, 400);
+}
+$("modeMe").onclick = () => {
+  $("whereMsg").hidden = true;
+  if (!me) { startLocation(); return; }
+  if (!KOREA.contains(me)) { $("whereMsg").hidden = false; return; }
+  setMode("me"); following = true; $("locate").classList.add("on"); map.setView(me, 17);
+};
+$("modeArea").onclick = () => { $("areaPick").hidden = false; setMode("area"); };
+
+let sidoSel = null, sggSel = null;
+function renderSido() {
+  const box = $("sidoChips"); box.innerHTML = "";
+  if (!regions.length) { box.innerHTML = '<p class="muted small">지역 목록을 불러오는 중…</p>'; setTimeout(renderSido, 400); return; }
+  for (const g of regions) {
+    const b = document.createElement("button"); b.type = "button";
+    b.innerHTML = `${shortSido(g.name)}<small>${g.count.toLocaleString()}</small>`;
+    b.setAttribute("aria-pressed", g.name === sidoSel);
+    b.onclick = async () => { sidoSel = g.name; sggSel = null; renderSido(); await loadRegion(g); renderSgg(); };
+    box.appendChild(b);
+  }
+}
+function renderSgg() {
+  const box = $("sggChips"); box.innerHTML = "";
+  const counts = new Map();
+  for (const cw of all) if (cw.sido === sidoSel && !hidden(cw)) { const k = (cw.area || cw.addr || "").split(" ")[0]; if (k) counts.set(k, (counts.get(k) || 0) + 1); }
+  $("sggWrap").hidden = !counts.size;
+  for (const [k, n] of [...counts].sort((a, b) => b[1] - a[1])) {
+    const b = document.createElement("button"); b.type = "button";
+    b.innerHTML = `${k}<small>${n}</small>`;
+    b.setAttribute("aria-pressed", k === sggSel);
+    b.onclick = () => {
+      sggSel = k; renderSgg();
+      goTo(all.filter(cw => cw.sido === sidoSel && (cw.area || cw.addr || "").split(" ")[0] === k), `${shortSido(sidoSel)} ${k}`);
+    };
+    box.appendChild(b);
+  }
+}
+let qTimer;
+$("q").addEventListener("input", () => { clearTimeout(qTimer); qTimer = setTimeout(runSearch, 250); });
+$("q").addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); clearTimeout(qTimer); runSearch(); } });
+async function runSearch() {
+  const q = $("q").value.trim().replace(/\s+/g, "");
+  const box = $("results");
+  if (q.length < 2) { box.hidden = true; return; }
+  box.hidden = false; box.innerHTML = '<p class="muted small">찾는 중…</p>';
+  await loadAllRegions();
+  const groups = new Map();
+  for (const cw of all) {
+    if (hidden(cw)) continue;
+    const text = ((cw.sido || "") + (cw.addr || "")).replace(/\s+/g, "");
+    if (!text.includes(q)) continue;
+    const key = `${shortSido(cw.sido || "")} ${areaOf(cw)}`;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(cw);
+  }
+  box.innerHTML = "";
+  if (!groups.size) { box.innerHTML = '<p class="muted small">찾는 동네가 없어요. 지금 데이터는 전국 일부 지역만 들어 있어요.</p>'; return; }
+  for (const [key, list] of [...groups].sort((a, b) => b[1].length - a[1].length).slice(0, 12)) {
+    const b = document.createElement("button"); b.type = "button"; b.className = "res";
+    const auto = list.some(c => c.utic);
+    b.innerHTML = `<span></span><small>${auto ? "자동 계산 · " : ""}횡단보도 ${list.length}개</small>`;
+    b.firstChild.textContent = key;
+    b.onclick = () => goTo(list, key);
+    box.appendChild(b);
+  }
+}
 
 // ---------------- 시작 ----------------
 renderVoiceBtn();

@@ -2,7 +2,7 @@
   --bg:#eef0ec; --surface:#ffffff; --fg:#1d2420; --muted:#5f6b64; --line:#d6dbd5;
   --green:#0f9d5c; --green-soft:#d9f2e5; --red:#d93a32; --red-soft:#fadcd9;
   --amber:#b07a05; --amber-soft:#faecc8; --gray:#8a948f; --violet:#7a52c7;
-  --display:"Black Han Sans","Gothic A1",system-ui,sans-serif;
+  --display:"ONE-Mobile-Title","Gothic A1",system-ui,sans-serif;
   --body:"Gothic A1",system-ui,-apple-system,sans-serif;
   --digits:"Share Tech Mono",ui-monospace,monospace;
 }
@@ -78,12 +78,16 @@ h2{font-size:17px;margin:0 0 4px}
 .logrow{display:grid;grid-template-columns:10px 1fr auto;gap:10px;align-items:center;padding:6px 0;font-size:13px;border-bottom:1px solid var(--line)}
 .logrow .ld{width:10px;height:10px;border-radius:50%}
 .logrow time{font-family:var(--digits);font-variant-numeric:tabular-nums;color:var(--muted)}
-.cover{position:fixed;inset:0;z-index:1000;background:var(--bg);display:flex;align-items:center;justify-content:center;
+.cover{position:fixed;inset:0;z-index:1000;background:#fefefe;color:#1d2420;color-scheme:light;--muted:#5f6b64;--surface:#fff;--fg:#1d2420;--line:#d6dbd5;display:flex;justify-content:center;overflow-y:auto;
   padding:calc(24px + env(safe-area-inset-top,0px)) max(20px,env(safe-area-inset-right,0px)) calc(24px + env(safe-area-inset-bottom,0px)) max(20px,env(safe-area-inset-left,0px));transition:opacity .35s}
 .cover.out{opacity:0;pointer-events:none}
-.cover-in{width:100%;max-width:380px;display:flex;flex-direction:column;align-items:center;gap:10px;text-align:center}
-.mascot{width:100%;max-width:300px;height:auto}
-.ctitle{font-family:var(--display);font-weight:400;font-size:44px;margin:4px 0 0;line-height:1.1}
+.cover-in{width:100%;max-width:380px;min-height:100%;display:flex;flex-direction:column;align-items:center;text-align:center}
+.cover-mid{flex:1;width:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;padding-bottom:4vh}
+@font-face{font-family:"TmoneyRoundWind";src:url("https://cdn.jsdelivr.net/gh/projectnoonnu/noonfonts_20-07@1.0/TmoneyRoundWindRegular.woff") format("woff");font-weight:400;font-display:swap}
+.mascot-wrap{position:relative;width:100%;max-width:300px;container-type:inline-size}
+.mascot{display:block;width:100%;height:auto;max-height:46vh;object-fit:contain}
+.think{position:absolute;left:30.2%;top:18.9%;transform:translate(-50%,-50%);font-family:"TmoneyRoundWind","Gothic A1",sans-serif;font-size:7cqw;color:#3d3633;white-space:nowrap;letter-spacing:.5px}
+.ctitle{font-family:var(--display);font-weight:400;font-size:clamp(56px,17vw,76px);margin:2vh 0 0;line-height:1.05;letter-spacing:-1px}
 .ctitle span{color:var(--green)}
 .csub{margin:0 0 8px;color:var(--muted);text-wrap:balance}
 .ghost{width:100%;border:1px solid var(--line);border-radius:14px;padding:13px;background:var(--surface);color:var(--fg);font-size:15px;font-weight:600}
@@ -107,3 +111,22 @@ h2{font-size:17px;margin:0 0 4px}
 .tl em{position:absolute;bottom:-6px;left:-8px;width:15px;height:15px;border-radius:50%;background:#8a948f;color:#fff;
   font:800 10px/15px var(--body);font-style:normal;text-align:center;border:1.5px solid #fff}
 @media (prefers-reduced-motion:reduce){.tap:active{transform:none}}
+
+.errbox{font-size:12px;color:#b3261e;background:#fdecea;border-radius:8px;padding:6px 10px;word-break:break-all;margin:0}
+
+/* 검색·지역 고르기 */
+.finder{display:flex;flex-direction:column;gap:8px;margin-bottom:6px}
+.modes{display:grid;grid-template-columns:1fr 1fr;background:var(--bg);border-radius:12px;padding:3px;gap:3px}
+.modes button{border:0;border-radius:10px;padding:8px 6px;background:none;color:var(--muted);font:700 14px var(--body)}
+.modes button[aria-pressed="true"]{background:var(--surface);color:var(--fg);box-shadow:0 1px 3px rgba(0,0,0,.12)}
+#q{width:100%;font:15px var(--body);padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:var(--surface);color:var(--fg)}
+#q:focus-visible{outline:3px solid var(--amber);outline-offset:1px}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chips button{border:1px solid var(--line);background:var(--surface);color:var(--fg);border-radius:999px;padding:6px 11px;font:600 13px var(--body)}
+.chips button[aria-pressed="true"]{background:var(--fg);color:var(--bg);border-color:var(--fg)}
+.chips button small{color:var(--muted);font-weight:400;margin-left:3px}
+.chips button[aria-pressed="true"] small{color:inherit;opacity:.75}
+.label{font-size:11px;font-weight:800;letter-spacing:.06em;color:var(--muted);margin:4px 0}
+.res{display:flex;justify-content:space-between;gap:10px;padding:10px 2px;border:0;border-top:1px solid var(--line);background:none;color:inherit;text-align:left;font:14px var(--body);width:100%}
+.res:first-child{border-top:0}
+.res small{color:var(--muted);white-space:nowrap}

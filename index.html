@@ -9,8 +9,9 @@
 <link rel="manifest" href="manifest.json">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icon.svg">
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Black+Han+Sans&family=Gothic+A1:wght@400;600;800&family=Share+Tech+Mono&display=swap">
+<link rel="stylesheet" href="lib/leaflet/leaflet.css">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gothic+A1:wght@400;600;800&family=Share+Tech+Mono&display=swap">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@noonnu/one-mobile-title@0.1.0/index.css">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -24,12 +25,15 @@
 <!-- 표지 -->
 <div id="cover" class="cover" role="dialog" aria-label="언제바껴 시작 화면">
   <div class="cover-in">
-    <img src="mascot.svg" alt="신호등 옆에서 기다리는 카피바라" class="mascot">
     <h1 class="ctitle"><span>언제</span>바껴</h1>
-    <p class="csub">내 주변 횡단보도, 다음 초록불까지 얼마나 남았을까요?</p>
-    <button id="startLoc" class="primary" type="button">내 위치로 시작하기</button>
-    <button id="startMap" class="ghost" type="button">지도 먼저 볼게요</button>
-    <p class="muted small">가입 없이 써요. 위치는 이 폰 안에서만 써요.</p>
+    <div class="cover-mid">
+      <div class="mascot-wrap"><img src="mascot.webp" alt="손목시계를 보며 &quot;…언제바껴&quot; 하고 생각하는 카피바라와 빨간불 신호등" class="mascot" width="720" height="848"><span class="think" aria-hidden="true">…언제바껴</span></div>
+      <p class="csub">내 주변 횡단보도, 다음 초록불까지 얼마나 남았을까요?</p>
+      <button id="startLoc" class="primary" type="button">내 위치로 시작하기</button>
+      <button id="startMap" class="ghost" type="button">지도 먼저 볼게요</button>
+      <p class="muted small">가입 없이 써요. 위치는 이 폰 안에서만 써요.</p>
+      <p id="err" class="errbox" hidden></p>
+    </div>
   </div>
 </div>
 
@@ -56,11 +60,28 @@
 
   <!-- 주변 목록 -->
   <div id="vNear" hidden>
+    <div class="finder">
+      <div class="modes" role="group" aria-label="기준 고르기">
+        <button id="modeMe" type="button" aria-pressed="true">내 위치 기준</button>
+        <button id="modeArea" type="button" aria-pressed="false">지역 고르기</button>
+      </div>
+      <input id="q" type="search" placeholder="동네·도로·교차로 검색 (예: 전민동, 둔산동)" autocomplete="off" enterkeyhint="search">
+      <div id="results" class="list" hidden></div>
+      <div id="areaPick" hidden>
+        <div class="label">시·도</div>
+        <div class="chips" id="sidoChips"></div>
+        <div id="sggWrap" hidden>
+          <div class="label">시·군·구</div>
+          <div class="chips" id="sggChips"></div>
+        </div>
+      </div>
+      <p class="muted small" id="whereMsg" hidden></p>
+    </div>
     <div id="favBox" hidden>
       <h2>즐겨찾는 횡단보도</h2>
       <div id="favList" class="list"></div>
     </div>
-    <h2>가까운 신호 횡단보도</h2>
+    <h2 id="nearTitle">가까운 신호 횡단보도</h2>
     <div id="nearList" class="list"></div>
   </div>
 
@@ -90,10 +111,17 @@
     <div id="log" class="log" hidden></div>
   </div>
 
-  <p class="note">예상치예요. 교통량에 따라 신호가 바뀌는 곳에서는 틀릴 수 있으니 건널 때는 반드시 실제 신호등을 보세요. 횡단보도 정보: 전국횡단보도표준데이터(공공데이터포털)</p>
+  <p class="note">예상치예요. 교통량에 따라 신호가 바뀌는 곳에서는 틀릴 수 있으니 건널 때는 반드시 실제 신호등을 보세요. 횡단보도 정보: 전국횡단보도표준데이터(공공데이터포털) · 신호정보: 경찰청 도시교통정보센터(UTIC)</p>
 </section>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script>
+// 문제가 생기면 화면에 바로 보여주기 (원인 찾기용)
+window.addEventListener("error", e => {
+  const box = document.getElementById("err"); if (!box) return;
+  box.hidden = false; box.textContent = "오류: " + (e.message || e.type) + (e.filename ? " (" + e.filename.split("/").pop() + ":" + e.lineno + ")" : "");
+}, true);
+</script>
+<script src="lib/leaflet/leaflet.js"></script>
 <script src="app.js"></script>
 </body>
 </html>
